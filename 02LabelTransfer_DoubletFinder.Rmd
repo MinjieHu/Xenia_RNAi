@@ -1,0 +1,93 @@
+```{r}
+library(DoubletFinder)
+```
+
+# Load reference data from previous paper
+  The reference data can be download from: https://cmo.carnegiescience.edu/endosymbiosis/data/non_regeneration_integrated.RDS
+  
+```{r }
+xenia <- readRDS("data/non_regeneration_integrated.RDS")
+```
+
+```{r}
+control_RNAi <- readRDS("data/control_RNAi.RDS")
+control_RNAi <- RunPCA(control_RNAi)
+control_RNAi <- RunUMAP(control_RNAi, dims = 1:10)
+```
+
+
+```{r}
+## pK Identification (no ground-truth) ---------------------------------------------------------------------------------------
+sweep.res.list <- paramSweep_v3(control_RNAi, PCs = 1:10, sct = FALSE)
+sweep.stats <- summarizeSweep(sweep.res.list, GT = FALSE)
+bcmvn <- find.pK(sweep.stats)
+pK_value <- as.numeric(as.character(bcmvn$pK[bcmvn$BCmetric == max(bcmvn$BCmetric)]))
+
+
+
+## Homotypic Doublet Proportion Estimate -------------------------------------------------------------------------------------
+bleach.anchors <- FindTransferAnchors(reference = xenia, query = control_RNAi, 
+    dims = 1:30)
+predictions <- TransferData(anchorset = bleach.anchors, refdata =as.character(xenia$seurat_clusters), 
+    dims = 1:30)
+control_RNAi <- AddMetaData(control_RNAi, metadata = predictions)
+Idents(control_RNAi) <-"predicted.id"
+annotations <- control_RNAi@meta.data$predicted.id
+homotypic.prop <- modelHomotypic(annotations)           ## ex: annotations <- control_RNAi@meta.data$ClusteringResults
+nExp_poi <- round(0.1*length(control_RNAi@meta.data$orig.ident))  ## Assuming 10% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+
+## Run DoubletFinder with varying classification stringencies ----------------------------------------------------------------
+pN_value <- 0.25
+pANN_value <- paste0("pANN_",pN_value,"_",pK_value,'_',nExp_poi)
+control_RNAi <- doubletFinder_v3(control_RNAi, PCs = 1:10, pN = pN_value, pK = pK_value, nExp = nExp_poi, reuse.pANN = FALSE)
+control_RNAi <- doubletFinder_v3(control_RNAi, PCs = 1:10, pN = pN_value, pK = pK_value, nExp = nExp_poi.adj, reuse.pANN = pANN_value)	 
+control_RNAi@meta.data$Doublet <- control_RNAi@meta.data$DF.classifications_0.25_0.24_1185
+
+FeaturePlot(control_RNAi,features = "nCount_RNA")
+DimPlot(control_RNAi,reduction="umap",group.by ="Doublet",label = T)
+DimPlot(control_RNAi,reduction="umap",group.by ="predicted.id",label = T)
+saveRDS(control_RNAi,"data/control_RNAi.RDS")
+```
+
+```{r}
+LePin_RNAi <- readRDS("data/LePin_RNAi.RDS")
+LePin_RNAi <- RunPCA(LePin_RNAi)
+LePin_RNAi <- RunUMAP(LePin_RNAi, dims = 1:10)
+
+
+
+## pK Identification (no ground-truth) ---------------------------------------------------------------------------------------
+sweep.res.list <- paramSweep_v3(LePin_RNAi, PCs = 1:10, sct = FALSE)
+sweep.stats <- summarizeSweep(sweep.res.list, GT = FALSE)
+bcmvn <- find.pK(sweep.stats)
+pK_value <- as.numeric(as.character(bcmvn$pK[bcmvn$BCmetric == max(bcmvn$BCmetric)]))
+
+
+
+## Homotypic Doublet Proportion Estimate -------------------------------------------------------------------------------------
+bleach.anchors <- FindTransferAnchors(reference = xenia, query = LePin_RNAi, 
+    dims = 1:30)
+predictions <- TransferData(anchorset = bleach.anchors, refdata =as.character(xenia$seurat_clusters), 
+    dims = 1:30)
+LePin_RNAi <- AddMetaData(LePin_RNAi, metadata = predictions)
+Idents(LePin_RNAi) <-"predicted.id"
+annotations <- LePin_RNAi@meta.data$predicted.id
+homotypic.prop <- modelHomotypic(annotations)           ## ex: annotations <- LePin_RNAi@meta.data$ClusteringResults
+nExp_poi <- round(0.1*length(LePin_RNAi@meta.data$orig.ident))  ## Assuming 7.5% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+
+## Run DoubletFinder with varying classification stringencies ----------------------------------------------------------------
+pN_value <- 0.25
+pANN_value <- paste0("pANN_",pN_value,"_",pK_value,'_',nExp_poi)
+LePin_RNAi <- doubletFinder_v3(LePin_RNAi, PCs = 1:10, pN = pN_value, pK = pK_value, nExp = nExp_poi, reuse.pANN = FALSE)
+LePin_RNAi <- doubletFinder_v3(LePin_RNAi, PCs = 1:10, pN = pN_value, pK = pK_value, nExp = nExp_poi.adj, reuse.pANN = pANN_value)	 
+LePin_RNAi@meta.data$Doublet <- LePin_RNAi@meta.data$DF.classifications_0.25_0.005_1129
+
+FeaturePlot(LePin_RNAi,features = "nCount_RNA")
+DimPlot(LePin_RNAi,reduction="umap",group.by ="DF.classifications_0.25_0.005_1129")
+DimPlot(LePin_RNAi,reduction="umap",group.by ="predicted.id",label = T)
+saveRDS(LePin_RNAi,"data/LePin_RNAi.RDS")
+```

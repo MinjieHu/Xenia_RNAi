@@ -1,0 +1,71 @@
+---
+title: "Creat Seurat object"
+output: html_notebook
+---
+
+Loading library
+```{r}
+library(monocle)
+library(ggsci)
+library(dplyr)
+library(pheatmap)
+library(velocyto.R)
+.libPaths( c("/mnt/sequence/R/3.6.1/Seurat/",.libPaths()) )
+reticulate::use_virtualenv( "/mnt/sequence/R/3.6.1/Seurat/env" )
+library(Seurat)
+
+library(clusterProfiler)
+library(cowplot)
+```
+
+Define functions
+```{r}
+#filter data and creat seurat object
+preprocess_data<- function(sample,rawdatafolder)
+{
+  rawdata<- Read10X(data.dir = rawdatafolder)
+  colnames(rawdata) <- paste(colnames(rawdata),sample,sep="")
+  rownames(rawdata) <-  id2symbol$symbol
+  data.du <- CreateSeuratObject(counts = rawdata, min.cells = 0, min.features = 0, project = sample)
+  percent.mito <- Matrix::colSums(data.du@assays$RNA@counts[mito_gene, ])/Matrix::colSums(data.du@assays$RNA@counts)
+  data.du <- AddMetaData(object = data.du, metadata = percent.mito, col.name = "percent.mito")
+  data.du@meta.data$sample <- sample
+
+nUMI_high <<- quantile(data.du@meta.data$nCount_RNA,0.99)
+  data.du <- subset(data.du,  subset= nCount_RNA >= 400)
+  data.du <- subset(data.du, subset= nCount_RNA < nUMI_high)
+  data.du <- subset(data.du, subset= percent.mito <  0.002)
+  data.sm <- NormalizeData(data.du,verbose = FALSE)
+  data.sm <- ScaleData(data.sm, display.progress = F)
+  # data.sm <- ScaleData(data.sm, display.progress = F, vars.to.regress="nUMI")
+  data.sm <- FindVariableFeatures(data.sm,selection.method = "mvp", nfeatures = 1000, verbose = FALSE)
+  print(dim(data.sm@meta.data))
+  return(data.sm)
+}
+```
+Load gene names
+```{r}
+  id2symbol <- read.table("data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
+#Seurat V3 symbol replace "_" with "-2"
+  id2symbol$symbol <- gsub(pattern = "_", replacement = "-", x = id2symbol$symbol)
+  mito_gene <- paste("Xe_0",23787:23800,sep="")
+  mito_gene <- id2symbol[id2symbol$ID %in% mito_gene,]$symbol
+```
+Create Seurat object for each sample
+```{r}
+control_RANi <- preprocess_data("control_RANi","data/MH12/")
+LePin_RNAi <- preprocess_data("LePin_RNAi","data/MH13/")
+
+```
+
+```{r}
+
+saveRDS(control_RANi,"data/control_RANi")
+saveRDS(LePin_RNAi,"data/LePin_RNAi")
+```
+
+SessionInfo
+```{r}
+sessionInfo()
+```
+

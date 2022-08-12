@@ -1,0 +1,142 @@
+
+
+```{r,message=FALSE}
+library(monocle)
+#library(cowplot)
+library(ggsci)
+library(dplyr)
+library(pheatmap)
+library(Seurat)
+library(ggpubr)
+library(tidyverse)
+```
+
+```{r}
+control_RNAi <- readRDS("data/control_RNAi.RDS")
+LePin_RNAi <- readRDS("data/LePin_RNAi.RDS")
+```
+# Load gene names
+```{r}
+  id2symbol <- read.table("data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
+#Seurat V3 symbol replace "_" with "-2"
+  id2symbol$symbol <- gsub(pattern = "_", replacement = "-", x = id2symbol$symbol)
+```
+
+# symbiotic cell for monocle analysis
+```{r}
+symbiotic.list <- list( control_RNAi=control_RNAi[,control_RNAi$Doublet == "Singlet" & control_RNAi$predicted.id==16],LePin_RNAi=LePin_RNAi[,LePin_RNAi$Doublet == "Singlet" & LePin_RNAi$predicted.id==16])
+symbiotic.anchors <- FindIntegrationAnchors(object.list = symbiotic.list, dims = 1:30,assay=c("RNA","RNA"),k.filter = 40)
+symbiotic <- IntegrateData(anchorset = symbiotic.anchors, dims = 1:30,features.to.integrate = id2symbol$symbol)
+data <- as(as.matrix(symbiotic@assays$integrated@data), 'sparseMatrix')
+pd <- new('AnnotatedDataFrame', data = symbiotic@meta.data)
+fData <- data.frame(gene_short_name = row.names(data), row.names = row.names(data))
+fd <- new('AnnotatedDataFrame', data = fData)
+#Construct monocle cds
+symbiotic_mono <- newCellDataSet(data,
+                              phenoData = pd,
+                              featureData = fd,
+                              lowerDetectionLimit = 1,
+                              expressionFamily = uninormal())# since I have already normalized
+```
+
+# cell quality control
+```{r}
+symbiotic_mono <- detectGenes(symbiotic_mono, min_expr = 0.1)
+```
+
+
+# monocle pseudotime analysis for symbiotic cell
+```{r}
+
+symbiotic_mono <- reduceDimension( symbiotic_mono, reduction_method='tSNE',norm_method ="none", residualModelFormulaStr = "~ percent.mito")
+symbiotic_mono <- clusterCells( symbiotic_mono,num_clusters = 4)
+plot_cell_clusters(symbiotic_mono,1,2,color = "Cluster")
+plot_cell_clusters(symbiotic_mono,1,2,color="sample")
+
+symbiotic_clustering_DEG_genes <- differentialGeneTest( symbiotic_mono, fullModelFormulaStr="~Cluster",cores=10 )
+#use the top 1000 gene to do the pseudotime
+symbiotic_ordering_genes <- row.names( symbiotic_clustering_DEG_genes )[ order( symbiotic_clustering_DEG_genes$qval ) ][ 1:3000 ]
+symbiotic_mono <- setOrderingFilter( symbiotic_mono, ordering_genes=symbiotic_ordering_genes )
+```
+
+```{r}
+symbiotic_mono <- reduceDimension( symbiotic_mono, max_components = 2, reduction_method ="DDRTree" ,norm_method ="none",residualModelFormulaStr = "~ percent.mito")
+symbiotic_mono <- orderCells( symbiotic_mono, reverse = F) 
+
+#pdf("figures/pseudotime.pdf",height=3,width=5)
+plot_cell_trajectory(symbiotic_mono, color_by="sample",show_tree = F,show_branch_points=F,cell_size =1,alpha =0 )#+ facet_wrap(~sample)#+ scale_color_manual(values=c("red","blue","grey","grey","grey","grey"))+ geom_point(alpha = 0.1)
+plot_cell_trajectory(symbiotic_mono, color_by="Pseudotime",show_tree = F,show_branch_points=F,show_state_number =F,cell_size =1 )+scale_color_gradientn(colours = c("green","red"))
+plot_cell_trajectory(symbiotic_mono, markers = c("LePin"),use_color_gradient =T, markers_linear =T,show_branch_points=F,show_tree =F,cell_size =1 )+facet_wrap(~sample)
+saveRDS(symbiotic_mono,"data/RNAi_symbiotic_mono.RDS")
+#symbiotic_mono <- readRDS("data/RNAi_symbiotic_mono.RDS")
+```
+# Cell density comparison between Control and LePin RNAi
+```{r}
+#pdf("figures/pseudotime_cell_distribution.pdf",height=3,width=7)
+ggplot(pData(symbiotic_mono), aes(Pseudotime, ..density.., colour = sample)) +
+  geom_freqpoly(binwidth = 1) +theme_classic()
+ggplot(pData(symbiotic_mono), aes(Pseudotime, ..count.., colour = sample)) +
+  geom_freqpoly(binwidth = 1) +theme_classic()
+#dev.off()
+```
+
+
+
+
+
+Metagene in pseudotime
+```{r}
+symbiotic_mono <- readRDS("../RNAi_wrap/data/RNAi_symbiotic_mono.RDS")
+t.goodCellScores <- as.data.frame(t(goodCellScores))
+colnames(t.goodCellScores) <- paste0("Metagene_",colnames(t.goodCellScores))
+t.goodCellScores$orig.ident <- rownames(t.goodCellScores)
+
+
+#add cell scores as metagene columns to seurat object
+pData(symbiotic_mono)$orig.ident <- rownames(pData(symbiotic_mono))
+temp <- pData(symbiotic_mono)
+pData(symbiotic_mono) <- left_join(pData(symbiotic_mono),t.goodCellScores,by="orig.ident")
+rownames(pData(symbiotic_mono)) <- pData(symbiotic_mono)$orig.ident
+#pdf("figures/pseudotime_Metagene44.pdf",height=3,width=7)
+ggplot(pData(symbiotic_mono), aes(x = Pseudotime, y = Metagene_44,color=sample))  +stat_summary_bin(fun.data = "mean_cl_boot", geom = "crossbar", binwidth = 1)+theme_classic()
+#dev.off()
+plot_cell_trajectory(symbiotic_mono, color_by="Metagene_44 ",show_tree = F,show_branch_points=F,show_state_number =F ,cell_size = 0.8)+scale_color_gradientn(colours = c("gray","red")) + facet_wrap(~sample)
+
+```
+```{r}
+ggplot(pData(symbiotic_mono)) +geom_freqpoly(aes(x=Pseudotime, y= ..density.., colour = sample),binwidth = 1) +stat_summary_bin(aes(x = Pseudotime, y = Metagene_44,color=sample),fun.data = "mean_cl_boot", geom = "crossbar",  binwidth = 1) +theme_classic()
+```
+
+
+
+
+
+
+# Different_expressed genes
+```{r}
+symbiotic_pseudotime_de <- differentialGeneTest(symbiotic_mono,
+                                                fullModelFormulaStr = "~sm.ns(Pseudotime)",
+                                                cores = 8)
+symbiotic_pseudotime_de <- symbiotic_pseudotime_de %>% arrange(qval) 
+#significat gene q<0.05
+symbiotic_pseudotime_de %>% arrange(qval) %>% filter(qval < 0.05) %>% dplyr::select(gene_short_name) -> gene_to_cluster
+gene_to_cluster <- gene_to_cluster$gene_short_name
+```
+
+# Mapping previous 
+```{r}
+transition1_marker <-read.table("transition1_ID.txt",header = F)
+pre_endosymbiotic_marker <-read.table("pre_endosymbiotic_ID.txt",header = F)
+transition1_marker <- left_join(transition1_marker,id2symbol,by=c("V1"="ID"))
+transition1_marker <- left_join(transition1_marker,gene_to_cluster, by= c("symbol"="gene_short_name"))
+transition1_marker <-transition1_marker[transition1_marker$symbol %in% symbiotic_pseudotime_de[symbiotic_pseudotime_de$qval<0.05 & symbiotic_pseudotime_de$num_cells_expressed > 100,]$gene_short_name,]
+
+
+#pdf("figures/stage1_2_marker_in_new_pseudotime.pdf",height=5,width=6)
+plot_pseudotime_heatmap(symbiotic_mono[id2symbol[id2symbol$ID %in% transition1_marker$V1,]$symbol,],
+                                          num_clusters = 1,
+                                          cores = 1,
+                                          use_gene_short_name = T,
+                                          show_rownames = T)
+#dev.off()
+```
