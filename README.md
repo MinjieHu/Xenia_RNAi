@@ -4,7 +4,7 @@
 
 This repository contains the code and analyses associated with a RNAi study of *Xenia sp.* presented in the following manuscript:
 
-> Minjie Hu, Yun Bai, Yixian Zheng (2022) # Discovery of regulators for early steps of endosymbiosis in the soft coral *Xenia sp.*
+> Minjie Hu, Yun Bai, Xiaobin Zheng, Yixian Zheng (2022) # Discovery of regulators for early steps of endosymbiosis in the soft coral *Xenia sp.*
 
 
 ![Figure 1](figures/banner.jpg)
