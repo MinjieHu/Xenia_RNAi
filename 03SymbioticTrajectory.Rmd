@@ -92,19 +92,24 @@ gene_to_cluster <- gene_to_cluster$gene_short_name
 ```
 
 # Mapping previous pre-endsoymbiotic genes
+
+The gene list (pre_endosymbiotic_ID.txt and transition1_ID.txt) can be found from our previous publication(Hu, Minjie, Xiaobin Zheng, Chen-Ming Fan, and Yixian Zheng. “Lineage Dynamics of the Endosymbiotic Cell Type in the Soft Coral Xenia.” Nature 582, no. 7813 (2020): 534–38. https://doi.org/10.1038/s41586-020-2385-7.
+)
+
 ```{r}
 transition1_marker <-read.table("data/transition1_ID.txt",header = F)
 pre_endosymbiotic_marker <-read.table("data/pre_endosymbiotic_ID.txt",header = F)
-transition1_marker <- rbind(pre_endosymbiotic_marker,transition1_marker)
-transition1_marker <- left_join(transition1_marker,id2symbol,by=c("V1"="ID"))
-transition1_marker <-transition1_marker[transition1_marker$symbol %in% symbiotic_pseudotime_de[symbiotic_pseudotime_de$qval<0.05 & symbiotic_pseudotime_de$num_cells_expressed > 100,]$gene_short_name,]
+pre_endosymbiotic_marker <- rbind(pre_endosymbiotic_marker,transition1_marker)
+pre_endosymbiotic_marker <- left_join(pre_endosymbiotic_marker,id2symbol,by=c("V1"="ID"))
+pre_endosymbiotic_marker <-pre_endosymbiotic_marker[pre_endosymbiotic_marker$symbol %in% symbiotic_pseudotime_de[symbiotic_pseudotime_de$qval<0.05 & symbiotic_pseudotime_de$num_cells_expressed > 100,]$gene_short_name,]
 
 
-#pdf("figures/stage1_2_marker_in_new_pseudotime.pdf",height=5,width=6)
-plot_pseudotime_heatmap(symbiotic_mono[id2symbol[id2symbol$ID %in% transition1_marker$V1,]$symbol,],
+pdf("figures/stage1_2_marker_in_new_pseudotime.pdf",height=12,width=8)
+plot_pseudotime_heatmap(symbiotic_mono[id2symbol[id2symbol$ID %in% pre_endosymbiotic_marker$V1,]$symbol,],
                                           num_clusters = 1,
                                           cores = 1,
                                           use_gene_short_name = T,
-                                          show_rownames = T)
-#dev.off()
+                        show_rownames = T,
+                        hclust_method = "average")
+dev.off()
 ```
