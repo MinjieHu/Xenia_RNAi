@@ -30,3 +30,5 @@ R Markdown documents with analysis code.
 `04NMFAnalysis.Rmd` 
 - Identify other potential endosymbiosis initiation regulators by NMF.
 
+`alga_counting` 
+- Folder containing alga counting script
