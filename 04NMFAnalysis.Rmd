@@ -5,14 +5,10 @@ author: "Minjie Hu"
 
 ```{r setup, include=FALSE}
 library(Seurat, quietly = T)
-#library(magick, quietly = T)
-library(knitr, quietly = T)
-library(xtable, quietly = T)
 library(ggplot2)
-#library(kableExtra)
-library(xlsx)
 library(tidyverse)
-library(ggpubr)
+library(monocle)
+library(pheatmap)
 ```
 
 
@@ -22,10 +18,11 @@ library(ggpubr)
   id2symbol$symbol <- gsub(pattern = "_", replacement = "-", x = id2symbol$symbol)
 ```
 
-# Extract high variable gene expression matrix
-```{r}
+# Extract high variable gene expression matrix for NMF analysis
+```{r message=FALSE}
 LePin_RNAi <-readRDS("data/LePin_RNAi.RDS")
-Control_RNAi <-readRDS("data/control_RNAi.RDS")
+control_RNAi <-readRDS("data/control_RNAi.RDS")
+symbiotic <- readRDS("data/symbiotic_seurat.RDS")
 temp <-LePin_RNAi[,LePin_RNAi$Doublet == "Singlet" & LePin_RNAi$predicted.id==16]
 temp <- FindVariableFeatures(temp, selection.method = "vst", nfeatures = 3000)
 variable_gene <- temp@assays$RNA@var.features
@@ -140,7 +137,6 @@ numMetaKeep <- vapply(allKconsistMeta.IDs,length,numeric(1))
 numMetaKeep <- data.frame(kval = getKs, MK = numMetaKeep)
 ```
 
-```
 # Post-NMF Analysis
 
    We select optimal K according to the method used in the hydra scRNA-seq paper. Besides, we found when using a large K value, some metagene will result in very simialr genes. Taking both into consideration, we finally lands on K=45.
@@ -187,8 +183,8 @@ symbiotic_mono <- readRDS("data/RNAi_symbiotic_mono.RDS")
 
 # Compare the top 20% active cells for each metagene
 sample_distribution <- function(x) {
-  temp <- colnames(goodCellScores[x])
-  table(pData(symbiotic_mono)[temp,]$sample)
+#  temp <- colnames(goodCellScores[x])
+  table(pData(symbiotic_mono)[x,]$sample)
 }
 goodCellScores_bi <- apply(goodCellScores, 1, function(x) x> quantile(x,0.8))
 temp <- apply(goodCellScores_bi, 2, sample_distribution)
@@ -215,7 +211,7 @@ temp$new <- factor(temp$new,levels=temp$new)
 metagene_summary <- temp
 ```
 
-```
+
 # metagene heatmap along pseudotime
 ```{r}
 #normalized metagene activity for each cell
@@ -241,10 +237,13 @@ colnames(t.goodCellScores) <- paste0("GEP",metagene_summary$new)
 t.goodCellScores$orig.ident <- rownames(t.goodCellScores)
 
 #add cell scores as metagene columns to seurat object
-pData(symbiotic_mono) <- pData(symbiotic_mono)[,1:43]
+pData(symbiotic_mono) <- pData(symbiotic_mono)[,1:40]
 pData(symbiotic_mono)$orig.ident <- rownames(pData(symbiotic_mono))
 pData(symbiotic_mono) <- left_join(pData(symbiotic_mono),t.goodCellScores,by="orig.ident")
 rownames(pData(symbiotic_mono)) <- pData(symbiotic_mono)$orig.ident
+
+#export score for each cell
+write.table(pData(symbiotic_mono)[,39:64],"Table S3.xls",sep="\t",quote=F)
 ```
 
 # Metagene1,4,22 activity along pseudotime

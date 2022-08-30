@@ -1,10 +1,11 @@
 ---
-title: "Creat Seurat object"
-output: html_notebook
+title: "01 Creat Seurat object"
+author: "Minjie Hu"
 ---
 
-Loading library
-```{r}
+# Loading library
+```{r message=FALSE}
+library(rlang,lib.loc = "/mnt/sequence/home/mhu2/R/x86_64-pc-linux-gnu-library/3.6.1/")
 library(monocle)
 library(ggsci)
 library(dplyr)
@@ -13,12 +14,11 @@ library(velocyto.R)
 .libPaths( c("/mnt/sequence/R/3.6.1/Seurat/",.libPaths()) )
 reticulate::use_virtualenv( "/mnt/sequence/R/3.6.1/Seurat/env" )
 library(Seurat)
-
-library(clusterProfiler)
 library(cowplot)
+#detach(package:rlang)
 ```
 
-Define functions
+# Define functions
 ```{r}
 #filter data and creat seurat object
 preprocess_data<- function(sample,rawdatafolder)
@@ -43,7 +43,7 @@ nUMI_high <<- quantile(data.du@meta.data$nCount_RNA,0.99)
   return(data.sm)
 }
 ```
-Load gene names
+# Load gene names
 ```{r}
   id2symbol <- read.table("data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
 #Seurat V3 symbol replace "_" with "-2"
@@ -51,21 +51,22 @@ Load gene names
   mito_gene <- paste("Xe_0",23787:23800,sep="")
   mito_gene <- id2symbol[id2symbol$ID %in% mito_gene,]$symbol
 ```
-Create Seurat object for each sample
-```{r}
-control_RANi <- preprocess_data("control_RANi","data/MH12/")
+# Create Seurat object for each sample
+```{r message=FALSE}
+control_RNAi <- preprocess_data("control_RNAi","data/MH12/")
 LePin_RNAi <- preprocess_data("LePin_RNAi","data/MH13/")
 
 ```
 
 ```{r}
 
-saveRDS(control_RANi,"data/control_RANi")
-saveRDS(LePin_RNAi,"data/LePin_RNAi")
+saveRDS(control_RNAi,"data/control_RNAi.RDS")
+saveRDS(LePin_RNAi,"data/LePin_RNAi.RDS")
 ```
 
-SessionInfo
-```{r}
-sessionInfo()
+# Software versions
+This document was computed on `r format( Sys.time(), "%a %b %d %X %Y" )` with the following R package versions.
+```{r session_summary, echo=FALSE, include=TRUE, comment=NA}
+    sessionInfo()
 ```
 

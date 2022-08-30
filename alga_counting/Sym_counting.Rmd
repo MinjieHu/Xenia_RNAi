@@ -1,0 +1,138 @@
+---
+title: "Tissue attached algae number calculation"
+output: html_notebook
+---
+
+# Import library
+```{r, message = FALSE}
+library("EBImage")
+library("ggpubr")
+```
+
+# function to calculate the cell number
+input folder: folder containing inividual section image file. The folder contains the information for teatment, eg. CK, LePin_RNAi1 
+file: The individual image file generated from Nikon ECLIPSE Ti2 inverted microscope. The file name contains the information of animal number, section number and categroy, eg.1-1 sample1 stalk_mouth.tif
+```{r}
+
+calculate_cell_number <- function(file,input_folder)
+{
+    output_folder <- paste0(input_folder,"processed_threahold0.01/")
+    dir.create(output_folder)
+# Get information for each image
+    treatment=sub("(.*)/", "\\1", input_folder,perl=TRUE)
+    sample=sub(".*(sample\\d).*", "\\1", file,perl=TRUE)
+    tissue=sub(".* (.*)\\.tif","\\1",file,perl=TRUE)
+# Reading image
+    c2 <- readImage(paste0(input_folder,file))
+# Extract alga signal from the 3rd channel
+    sym <- c2[,,2]
+    sym.blur <- gblur(sym, sigma = 4)
+    disc = makeBrush(50, "disc")
+    disc = disc / sum(disc)
+# May need to adjust different offset to different batches. The purpose is to get accuate counting of alga number
+    offset = 0.0007
+    nuc_bg = filter2(sym.blur, disc )
+    nuc_th = sym.blur > nuc_bg + offset
+    nuc_th = opening(nuc_th)
+    nmask = watershed(distmap(nuc_th),0.1 )
+# Check how good the algae recognization it is. May need to optimize the offset if the counting is not great
+    writeImage(combine(nuc_th,normalize(sym)*6), paste0(output_folder,file,"sym.jpeg"), quality = 85)
+# Get the alga number
+    sym_number <- max(bwlabel(nmask))
+# Generate index for each alga
+    nuc_th <- dilate(nuc_th,makeBrush(10,"disc"))
+    symNo<- bwlabel(watershed(distmap(nuc_th),0.1 ))
+# Generating tissue mask with DAPI channel signal.
+    nucleus<- c2[,,1]
+# Play with the threshold to fit with different batches. eg, nucleus_open <- opening(nucleus>0.02). The lower threshold will cover more region. 
+    nucleus_open <- opening(nucleus>0.02)
+    nucleus_mask <- opening(nucleus_open,kern = brush)
+# Characterize the alga. The alga is counted as tissue attached if more than 2% and less than 90% of the algae is covered by the tissue mask
+    free_sym <- function(x)
+    {
+        data.frame(size=sum(symNo==x), number=x, free_ratio=1-sum(nucleus_mask[symNo==x])/sum(symNo==x))
+    }
+    sym_charac <- sapply(1:max(symNo),free_sym)
+    sym_charac <- as.data.frame(t(sym_charac))
+    write.table(do.call(cbind,sym_charac),paste0(output_folder,file,"sym_statisctic.xls"),sep="\t",quote=F)
+    partial_overlap_sym <- sum(sym_charac$free_ratio<0.9 & sym_charac$free_ratio >0.02)/sym_number
+    free_sym <- sum(sym_charac$free_ratio>0.9)/sym_number
+    writeImage(rgbImage(green=nucleus_mask, blue=nuc_th,red=nuc_th>nucleus_mask), paste0(output_folder,file,"sym_overlap.jpeg"), quality = 85)
+# Calculate the cell number based on DAPI signal
+    nucleus.blur <- gblur(nucleus, sigma = 0.3)
+    nucleusThresh = thresh(nucleus.blur, w = 5, h = 5, offset = 0.01)
+    nmask = watershed(distmap(nucleusThresh), 0.1 )
+    nucleusNo <- max(bwlabel(nmask))
+    writeImage(combine(nmask,normalize(nucleus)),paste0(output_folder,file,"nucleus.jpeg"), quality = 85)
+    data.frame(treatment=treatment,sample=sample,symNo=sym_number,nucleusNo=nucleusNo,free_sym=free_sym,partial_sym=partial_overlap_sym,tissue=tissue,file=file)
+}
+```
+
+```{r, warning = FALSE, message = FALSE }
+cell_count <-list()
+folders <-list.dirs()
+folders <- folders[grep("/.*/",folders)]
+folders <- folders[-grep("/.*/.*/",folders)]
+folders <- folders[-c(13,14)]
+folders <- paste0(folders,"/")
+folders
+
+brush <- makeBrush(45,"disc")
+for (folder in folders){
+files<- list.files(folder,pattern = "tif")
+#calculate_cell_number(files[1],"CK/")
+if(length(files)>0 ){
+cell_count[[folder]] <-  sapply(files,calculate_cell_number,input_folder=folder)
+}
+}
+saveRDS(cell_count,"regeneration_9d.RDS")
+
+cell_count <- lapply(cell_count,t)
+cell_count <- lapply(cell_count, as.data.frame)
+cell_count <- do.call(rbind,cell_count)
+temp <- rownames(cell_count)
+cell_count$symNo <- as.numeric(cell_count$symNo)
+cell_count$nucleusNo <- as.numeric(cell_count$nucleusNo)
+cell_count$treatment <- sub(".*/(.*)/.*", "\\1", temp,perl=TRUE)
+cell_count$batch <- sub("(.*)/.*/.*", "\\1", temp,perl=TRUE)
+cell_count$sample <- sub(".*(sample\\d+).*", "\\1", temp,perl=TRUE)
+cell_count$tissue <- sub(".* (.*).tif","\\1",temp, perl=T)
+cell_count$file <- temp
+cell_count$partial_sym <- as.numeric(cell_count$partial_sym)
+cell_count$free_sym <-as.numeric(cell_count$free_sym)
+cell_count$tissue[cell_count$tissue == "stalk_mounth"] <- "stalk_mouth"
+cell_count$tissue[cell_count$tissue == "tentacel"] <- "tentacle"
+cell_count$tissue<- factor(cell_count$tissue,levels = c("tentacle","tentacle_mouth","stalk_mouth","stalk"))
+cell_count <- cell_count[!is.na(cell_count$tissue),]
+cell_count %>% mutate(sym_percentage =symNo*(1-partial_sym-free_sym)/nucleusNo) -> cell_count
+# Since the images are token by Nikon auto-foucus function. The focus of some image maybe bad if some weired strong signal appeared on the section. Need to remove these images based on eye inspection.
+badsamples <- c("./20210408/CK/.9-1 sample1 stalk_mouth.tif","./20210408/LePin2/.01-1 sample1 stalk_mouth.tif",
+                "./20210225/CK/.1-1 sample1 stalk_mouth.tif", "./20210225/LePin1/.9-1 sample2 stalk_mouth.tif",
+                "./20210225/LePin2/.6-1 sample3 stalk_mouth.tif","./20210130/CK/.9-1 sample3 stalk_mouth.tif",
+                "./20210130/CK/.4-1 sample2 stalk_mouth.tif", "./20210130/LePin1/.6-1 stalk_mouth.tif",
+                "./20210130/LePin2/.7-1 sample2 stalk_mouth.tif","./20200724/CK/.6-1 sample4 stalk_mouth.tif",
+                "./20210225/CK/.1-1 sample2 stalk_mouth.tif","./20210130/CK/.7-2 sample3 stalk_mouth.tif",
+               "./20210130/CK/.9-1 sample1 stalk_mouth.tif","./20210408/LePin1/.9-1 sample4 stalk_mouth.tif")
+
+cell_count <- cell_count[!rownames(cell_count) %in% badsamples,]
+
+cell_count$treatment[cell_count$treatment=="CK"] <- "Control"
+cell_count$treatment[cell_count$treatment=="LePin1"] <- "LePin shRNA -1"
+cell_count$treatment[cell_count$treatment=="LePin2"] <- "LePin shRNA -2"
+
+
+my_comparisons <- list( c("LePin shRNA -1", "Control"), c("LePin shRNA -2", "Control"))
+p1 <- ggboxplot(cell_count, x = "treatment", y = "partial_sym",fill = "treatment",
+          palette = "jco",
+          add = "jitter",
+          facet.by = "tissue", ncol =4,short.panel.labs = FALSE) +
+    stat_compare_means(comparisons = my_comparisons,method="t.test",mapping=aes(label=..p..)) +scale_y_continuous(limits = c(0,0.53))+ rremove("xlab") + rremove("legend") +scale_x_discrete(labels=c("Control","LePin -1","LePin -2"))+
+          ylab("Partial enclosed algae percentage\n (Among all algae)")                                       #    stat_compare_means(label.y.npc =  0.8)
+ggpar(p1) +facet_grid( ~tissue,labeller = labeller( c("tentacle","tentacle_mouth","stalk_mouth","stalk")))
+```
+
+# Software versions
+This document was computed on `r format( Sys.time(), "%a %b %d %X %Y" )` with the following R package versions.
+```{r session_summary, echo=FALSE, include=TRUE, comment=NA}
+    sessionInfo()
+```

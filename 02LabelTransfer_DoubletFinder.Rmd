@@ -1,5 +1,13 @@
-```{r}
+---
+title: "02 Label Transfer and DoubletFinder"
+author: "Minjie Hu"
+---
+
+```{r message=FALSE}
 library(DoubletFinder)
+.libPaths( c("/mnt/sequence/R/3.6.1/Seurat/",.libPaths()) )
+reticulate::use_virtualenv( "/mnt/sequence/R/3.6.1/Seurat/env" )
+library(Seurat)
 ```
 
 # Load reference data from previous paper
@@ -9,7 +17,7 @@ library(DoubletFinder)
 xenia <- readRDS("data/non_regeneration_integrated.RDS")
 ```
 
-```{r}
+```{r message=FALSE}
 control_RNAi <- readRDS("data/control_RNAi.RDS")
 control_RNAi <- RunPCA(control_RNAi)
 control_RNAi <- RunUMAP(control_RNAi, dims = 1:10)
@@ -26,9 +34,9 @@ pK_value <- as.numeric(as.character(bcmvn$pK[bcmvn$BCmetric == max(bcmvn$BCmetri
 
 
 ## Homotypic Doublet Proportion Estimate -------------------------------------------------------------------------------------
-bleach.anchors <- FindTransferAnchors(reference = xenia, query = control_RNAi, 
+xenia.anchors <- FindTransferAnchors(reference = xenia, query = control_RNAi, 
     dims = 1:30)
-predictions <- TransferData(anchorset = bleach.anchors, refdata =as.character(xenia$seurat_clusters), 
+predictions <- TransferData(anchorset = xenia.anchors, refdata =as.character(xenia$seurat_clusters), 
     dims = 1:30)
 control_RNAi <- AddMetaData(control_RNAi, metadata = predictions)
 Idents(control_RNAi) <-"predicted.id"
@@ -67,9 +75,9 @@ pK_value <- as.numeric(as.character(bcmvn$pK[bcmvn$BCmetric == max(bcmvn$BCmetri
 
 
 ## Homotypic Doublet Proportion Estimate -------------------------------------------------------------------------------------
-bleach.anchors <- FindTransferAnchors(reference = xenia, query = LePin_RNAi, 
+xenia.anchors <- FindTransferAnchors(reference = xenia, query = LePin_RNAi, 
     dims = 1:30)
-predictions <- TransferData(anchorset = bleach.anchors, refdata =as.character(xenia$seurat_clusters), 
+predictions <- TransferData(anchorset = xenia.anchors, refdata =as.character(xenia$seurat_clusters), 
     dims = 1:30)
 LePin_RNAi <- AddMetaData(LePin_RNAi, metadata = predictions)
 Idents(LePin_RNAi) <-"predicted.id"
@@ -90,4 +98,10 @@ FeaturePlot(LePin_RNAi,features = "nCount_RNA")
 DimPlot(LePin_RNAi,reduction="umap",group.by ="DF.classifications_0.25_0.005_1129")
 DimPlot(LePin_RNAi,reduction="umap",group.by ="predicted.id",label = T)
 saveRDS(LePin_RNAi,"data/LePin_RNAi.RDS")
+```
+
+# Software versions
+This document was computed on `r format( Sys.time(), "%a %b %d %X %Y" )` with the following R package versions.
+```{r session_summary, echo=FALSE, include=TRUE, comment=NA}
+    sessionInfo()
 ```

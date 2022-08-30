@@ -1,4 +1,7 @@
-
+---
+title: "03 Endosymbitoic Lineage trajectory construction"
+author: "Minjie Hu"
+---
 
 ```{r,message=FALSE}
 library(monocle)
@@ -7,7 +10,6 @@ library(ggsci)
 library(dplyr)
 library(pheatmap)
 library(Seurat)
-library(ggpubr)
 library(tidyverse)
 ```
 
@@ -15,6 +17,7 @@ library(tidyverse)
 control_RNAi <- readRDS("data/control_RNAi.RDS")
 LePin_RNAi <- readRDS("data/LePin_RNAi.RDS")
 ```
+
 # Load gene names
 ```{r}
   id2symbol <- read.table("data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
@@ -23,10 +26,12 @@ LePin_RNAi <- readRDS("data/LePin_RNAi.RDS")
 ```
 
 # symbiotic cell for monocle analysis
-```{r}
+```{r message=FALSE}
 symbiotic.list <- list( control_RNAi=control_RNAi[,control_RNAi$Doublet == "Singlet" & control_RNAi$predicted.id==16],LePin_RNAi=LePin_RNAi[,LePin_RNAi$Doublet == "Singlet" & LePin_RNAi$predicted.id==16])
 symbiotic.anchors <- FindIntegrationAnchors(object.list = symbiotic.list, dims = 1:30,assay=c("RNA","RNA"),k.filter = 40)
 symbiotic <- IntegrateData(anchorset = symbiotic.anchors, dims = 1:30,features.to.integrate = id2symbol$symbol)
+saveRDS(symbiotic,"data/symbiotic_seurat.RDS")
+
 data <- as(as.matrix(symbiotic@assays$integrated@data), 'sparseMatrix')
 pd <- new('AnnotatedDataFrame', data = symbiotic@meta.data)
 fData <- data.frame(gene_short_name = row.names(data), row.names = row.names(data))
@@ -50,8 +55,6 @@ symbiotic_mono <- detectGenes(symbiotic_mono, min_expr = 0.1)
 
 symbiotic_mono <- reduceDimension( symbiotic_mono, reduction_method='tSNE',norm_method ="none", residualModelFormulaStr = "~ percent.mito")
 symbiotic_mono <- clusterCells( symbiotic_mono,num_clusters = 4)
-plot_cell_clusters(symbiotic_mono,1,2,color = "Cluster")
-plot_cell_clusters(symbiotic_mono,1,2,color="sample")
 
 symbiotic_clustering_DEG_genes <- differentialGeneTest( symbiotic_mono, fullModelFormulaStr="~Cluster",cores=10 )
 #use the top 1000 gene to do the pseudotime
@@ -81,7 +84,6 @@ ggplot(pData(symbiotic_mono), aes(Pseudotime, ..count.., colour = sample)) +
 
 # Different_expressed genes
 ```{r}
-#symbiotic_mono <- readRDS("data/RNAi_symbiotic_mono.RDS")
 symbiotic_pseudotime_de <- differentialGeneTest(symbiotic_mono,
                                                 fullModelFormulaStr = "~sm.ns(Pseudotime)",
                                                 cores = 8)
@@ -104,12 +106,17 @@ pre_endosymbiotic_marker <- left_join(pre_endosymbiotic_marker,id2symbol,by=c("V
 pre_endosymbiotic_marker <-pre_endosymbiotic_marker[pre_endosymbiotic_marker$symbol %in% symbiotic_pseudotime_de[symbiotic_pseudotime_de$qval<0.05 & symbiotic_pseudotime_de$num_cells_expressed > 100,]$gene_short_name,]
 
 
-pdf("figures/stage1_2_marker_in_new_pseudotime.pdf",height=12,width=8)
 plot_pseudotime_heatmap(symbiotic_mono[id2symbol[id2symbol$ID %in% pre_endosymbiotic_marker$V1,]$symbol,],
                                           num_clusters = 1,
                                           cores = 1,
                                           use_gene_short_name = T,
                         show_rownames = T,
                         hclust_method = "average")
-dev.off()
+```
+
+
+# Software versions
+This document was computed on `r format( Sys.time(), "%a %b %d %X %Y" )` with the following R package versions.
+```{r session_summary, echo=FALSE, include=TRUE, comment=NA}
+    sessionInfo()
 ```
